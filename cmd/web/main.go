@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"foodshop/internal/database"
+	"foodshop/internal/middleware"
 	"foodshop/internal/models"
+	"foodshop/internal/validator"
 	"log"
 	"net/http"
-	"strings"
+	"time"
 )
 
 var (
@@ -59,39 +61,24 @@ func RegistrationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate username
-	reg.Username = strings.TrimSpace(reg.Username)
-	if reg.Username == "" {
+	// Sanitize inputs
+	reg.Username = validator.SanitizeInput(reg.Username)
+	reg.Email = validator.SanitizeInput(reg.Email)
+
+	// Validate username with enhanced security rules
+	if err := validator.ValidateUsername(reg.Username); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(models.ErrUserLogin{
-			Message: "Username is required",
+			Message: err.Error(),
 		})
 		return
 	}
 
-	// Validate username length and format
-	if len(reg.Username) < 3 || len(reg.Username) > 50 {
+	// Validate password with strong requirements
+	if err := validator.ValidatePassword(reg.Password); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(models.ErrUserLogin{
-			Message: "Username must be between 3 and 50 characters",
-		})
-		return
-	}
-
-	// Validate password
-	if reg.Password == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(models.ErrUserLogin{
-			Message: "Password is required",
-		})
-		return
-	}
-
-	// Validate password strength
-	if len(reg.Password) < 8 {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(models.ErrUserLogin{
-			Message: "Password must be at least 8 characters long",
+			Message: err.Error(),
 		})
 		return
 	}
@@ -115,11 +102,10 @@ func RegistrationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate email if provided
-	reg.Email = strings.TrimSpace(reg.Email)
-	if reg.Email != "" && !strings.Contains(reg.Email, "@") {
+	if err := validator.ValidateEmail(reg.Email); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(models.ErrUserLogin{
-			Message: "Invalid email format",
+			Message: err.Error(),
 		})
 		return
 	}
@@ -178,14 +164,55 @@ func main() {
 
 	log.Printf("Database initialized successfully")
 
-	// Register handlers
-	http.HandleFunc("/", IndexHandler)
-	http.HandleFunc("/login", LoginHandler)
-	http.HandleFunc("/logout", IndexHandler)
-	http.HandleFunc("/registration", RegistrationHandler)
+	// Create rate limiter: 10 requests per second, burst of 20
+	rateLimiter := middleware.NewRateLimiter(10, 20)
 
-	log.Printf("Server starting on %s:%s", server, port)
-	if err := http.ListenAndServe(fmt.Sprintf("%s:%s", server, port), nil); err != nil {
+	// Create router/mux
+	mux := http.NewServeMux()
+
+	// Register handlers
+	mux.HandleFunc("/", IndexHandler)
+	mux.HandleFunc("/login", LoginHandler)
+	mux.HandleFunc("/logout", IndexHandler)
+	mux.HandleFunc("/registration", RegistrationHandler)
+
+	// Build middleware chain (order matters!)
+	var handler http.Handler = mux
+
+	// Recovery must be first to catch panics from other middleware
+	handler = middleware.Recovery(handler)
+
+	// Logging
+	handler = middleware.Logger(handler)
+
+	// Security headers
+	handler = middleware.SecurityHeaders(handler)
+
+	// CORS - allow localhost for development
+	handler = middleware.CORS([]string{"http://localhost:3000", "http://localhost:8080"})(handler)
+
+	// Rate limiting
+	handler = rateLimiter.Limit(handler)
+
+	// Request size limit (1MB)
+	handler = middleware.MaxBytesReader(1024 * 1024)(handler)
+
+	// Request timeout (30 seconds)
+	handler = middleware.Timeout(30 * time.Second)(handler)
+
+	// Configure server with security best practices
+	srv := &http.Server{
+		Addr:         fmt.Sprintf("%s:%s", server, port),
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	log.Printf("Server starting on %s:%s with security middleware enabled", server, port)
+	log.Printf("Security features: Rate limiting, CORS, Security headers, Request size limits, Timeouts")
+
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

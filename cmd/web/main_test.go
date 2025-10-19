@@ -39,11 +39,11 @@ func TestRegistrationHandler_Success(t *testing.T) {
 	db = setupTestDB(t)
 	defer db.Close()
 
-	// Create request
+	// Create request with strong password
 	payload := map[string]string{
 		"username":              "testuser",
-		"password":              "password123",
-		"password_verification": "password123",
+		"password":              "MyP@ssw0rd123",
+		"password_verification": "MyP@ssw0rd123",
 		"email":                 "test@example.com",
 	}
 	body, _ := json.Marshal(payload)
@@ -78,8 +78,8 @@ func TestRegistrationHandler_PasswordMismatch(t *testing.T) {
 	// Create request with mismatched passwords
 	payload := map[string]string{
 		"username":              "testuser",
-		"password":              "password123",
-		"password_verification": "different_password",
+		"password":              "MyP@ssw0rd123",
+		"password_verification": "Different_P@ss123",
 		"email":                 "test@example.com",
 	}
 	body, _ := json.Marshal(payload)
@@ -113,7 +113,7 @@ func TestRegistrationHandler_MissingPasswordVerification(t *testing.T) {
 	// Create request without password verification
 	payload := map[string]string{
 		"username": "testuser",
-		"password": "password123",
+		"password": "MyP@ssw0rd123",
 		"email":    "test@example.com",
 	}
 	body, _ := json.Marshal(payload)
@@ -147,8 +147,8 @@ func TestRegistrationHandler_ShortPassword(t *testing.T) {
 	// Create request with short password
 	payload := map[string]string{
 		"username":              "testuser",
-		"password":              "short",
-		"password_verification": "short",
+		"password":              "Short1!",
+		"password_verification": "Short1!",
 		"email":                 "test@example.com",
 	}
 	body, _ := json.Marshal(payload)
@@ -182,8 +182,8 @@ func TestRegistrationHandler_DuplicateUsername(t *testing.T) {
 	// Create first user
 	payload := map[string]string{
 		"username":              "testuser",
-		"password":              "password123",
-		"password_verification": "password123",
+		"password":              "MyP@ssw0rd123",
+		"password_verification": "MyP@ssw0rd123",
 		"email":                 "test@example.com",
 	}
 	body, _ := json.Marshal(payload)
