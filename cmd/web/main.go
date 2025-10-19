@@ -60,6 +60,7 @@ func main() {
 	mux.HandleFunc("/", handler.IndexHandler())
 	mux.HandleFunc("/registration", handler.RegistrationHandler(db))
 	mux.HandleFunc("/login", handler.LoginHandler(db))
+	mux.HandleFunc("/refresh", handler.RefreshHandler(db))
 
 	// Protected endpoints (authentication required)
 	protectedMux := http.NewServeMux()

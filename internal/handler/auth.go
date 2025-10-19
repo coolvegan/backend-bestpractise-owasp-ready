@@ -245,3 +245,75 @@ func RegistrationHandler(db *database.Sqlite) http.HandlerFunc {
 		})
 	}
 }
+
+func RefreshHandler(db *database.Sqlite) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		var req struct {
+			RefreshToken string `json:"refresh_token"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RefreshToken == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(models.ErrUserLogin{
+				Message: "Missing or invalid refresh_token",
+			})
+			return
+		}
+		claims, err := auth.ValidateToken(req.RefreshToken)
+		if err != nil || claims == nil || claims.Issuer != "foodshop-refresh" {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(models.ErrUserLogin{
+				Message: "Invalid or expired refresh token",
+			})
+			return
+		}
+		// Optional: Prüfe, ob User noch existiert/aktiv ist
+		user, err := db.GetUserByID(claims.UserID)
+		if err != nil {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(models.ErrUserLogin{
+				Message: "User not found",
+			})
+			return
+		}
+		if !user.IsActive {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(models.ErrUserLogin{
+				Message: "User is not active",
+			})
+			return
+		}
+		// Neue Tokens generieren
+		token, err := auth.GenerateToken(user.ID, user.Username)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(models.ErrUserLogin{
+				Message: "Failed to generate token",
+			})
+			return
+		}
+		refreshToken, err := auth.GenerateRefreshToken(user.ID, user.Username)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(models.ErrUserLogin{
+				Message: "Failed to generate refresh token",
+			})
+			return
+		}
+		resp := models.LoginResponse{
+			Message:      "Token refreshed successfully",
+			Token:        token,
+			RefreshToken: refreshToken,
+		}
+		resp.User.ID = user.ID
+		resp.User.Username = user.Username
+		resp.User.Email = user.Email
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(resp)
+		// Removed the line 'resp' as it has no effect
+	}
+}
