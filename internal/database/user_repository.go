@@ -31,12 +31,56 @@ const (
 // UserRepository defines methods for user management.
 type UserRepository interface {
 	CreateUser(username, password, email string) (*models.User, error)
+	UpdateUser(username, password, email string) (*models.User, error)
 	GetUserByUsername(username string) (*models.User, error)
 	GetUserByID(id int64) (*models.User, error)
 	DeleteUser(id int64) error
 	DeactivateUser(id int64) error
 	ActivateUser(id int64) error
 	VerifyPassword(username, password string) (*models.User, error)
+}
+
+// UpdateUser aktualisiert Passwort (optional) und E-Mail eines Users anhand des Usernames.
+// Der Username bleibt unveränderbar.
+func (s *Sqlite) UpdateUser(username, password, email string) (*models.User, error) {
+	// Hole aktuellen User
+	user, err := s.GetUserByUsername(username)
+	if err != nil {
+		return nil, err
+	}
+
+	// Passwort: Wenn leer, nicht ändern, sonst hashen
+	var hashedPassword string
+	if password == "" {
+		hashedPassword = user.Password
+	} else {
+		hp, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("hash password: %w", err)
+		}
+		hashedPassword = string(hp)
+	}
+
+	// Update durchführen (Username bleibt gleich)
+	query := `
+	       UPDATE users
+	       SET password = ?, email = ?
+	       WHERE username = ?
+       `
+	result, err := s.db.Exec(query, hashedPassword, email, username)
+	if err != nil {
+		return nil, fmt.Errorf("update user: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("get rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return nil, ErrUserNotFound
+	}
+
+	// Aktualisierten User zurückgeben
+	return s.GetUserByUsername(username)
 }
 
 // CreateUser creates a new user with hashed password.

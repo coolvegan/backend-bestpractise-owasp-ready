@@ -70,6 +70,7 @@ func main() {
 	protectedMux := http.NewServeMux()
 	protectedMux.HandleFunc("/logout", handler.LogoutHandler(tokenBlacklist))
 	protectedMux.HandleFunc("/profile", handler.ProfileHandler(db))
+	protectedMux.HandleFunc("/profile", handler.UpdateUserHandler(db)) // PUT/PATCH
 
 	// Apply auth middleware to protected routes
 	authMiddleware := middleware.AuthMiddleware(tokenBlacklist)

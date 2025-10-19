@@ -6,6 +6,63 @@ import (
 	"time"
 )
 
+func TestUpdateUser(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_update_user.db")
+
+	repo, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	defer repo.Close()
+
+	db := repo.(*Sqlite)
+	if err := db.InitSchema(); err != nil {
+		t.Fatalf("InitSchema() failed: %v", err)
+	}
+
+	// Create a user
+	user, err := db.CreateUser("testuser", "password123", "test@example.com")
+	if err != nil {
+		t.Fatalf("CreateUser() failed: %v", err)
+	}
+
+	// Update only email
+	updated, err := db.UpdateUser("testuser", "", "new@example.com")
+	if err != nil {
+		t.Fatalf("UpdateUser() failed: %v", err)
+	}
+	if updated.Email != "new@example.com" {
+		t.Errorf("Expected email 'new@example.com', got '%s'", updated.Email)
+	}
+	if updated.Password != user.Password {
+		t.Error("Password should not change if empty string is given")
+	}
+
+	// Update password and email
+	updated2, err := db.UpdateUser("testuser", "newpass456", "another@example.com")
+	if err != nil {
+		t.Fatalf("UpdateUser() failed: %v", err)
+	}
+	if updated2.Email != "another@example.com" {
+		t.Errorf("Expected email 'another@example.com', got '%s'", updated2.Email)
+	}
+	if updated2.Password == user.Password {
+		t.Error("Password hash should change when password is updated")
+	}
+
+	// Password should be hashed
+	if updated2.Password == "newpass456" {
+		t.Error("Password should be hashed, not stored in plain text")
+	}
+
+	// Update non-existent user
+	_, err = db.UpdateUser("doesnotexist", "irrelevant", "irrelevant@example.com")
+	if err != ErrUserNotFound {
+		t.Errorf("Expected ErrUserNotFound for non-existent user, got %v", err)
+	}
+}
+
 // TestCreateUser verifies user creation with password hashing.
 func TestCreateUser(t *testing.T) {
 	tmpDir := t.TempDir()
