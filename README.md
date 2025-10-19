@@ -250,6 +250,62 @@ Account Lockout, JWT, Token Blacklist und alle Security-Middleware sind produkti
 
 Siehe die Handler in `internal/handler/` für alle Endpunkte und die Middleware in `internal/middleware/` für Security-Features.
 
+## JWT-Validierung in anderen Services
+
+### Wie wird geprüft, ob ein JWT-Key (Token) gültig ist?
+
+Jede API, die denselben geheimen Schlüssel ("JWT Key") kennt, kann ein JWT lokal validieren – ohne Rückfrage beim Auth-Server. Die Prüfung läuft wie folgt ab:
+
+1. Das JWT besteht aus drei Teilen: Header, Payload, Signature.
+2. Beim Login wird das Token mit dem geheimen Schlüssel signiert.
+3. Bei jedem Request an eine geschützte Route (z.B. `/profile`) wird das Token im `Authorization`-Header (`Bearer <token>`) mitgesendet.
+4. Die API prüft:
+   - Ist das Token syntaktisch korrekt aufgebaut?
+   - Ist die Signatur mit dem hinterlegten Key gültig? (HMAC SHA256 mit dem symmetrischen Key)
+   - Ist das Token noch nicht abgelaufen (`exp`-Claim)?
+   - Optional: Stimmen weitere Claims wie `iss`, `sub`, `nbf`?
+
+
+**Go-Beispiel:**
+
+```go
+import "github.com/golang-jwt/jwt/v4"
+
+token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+  return []byte(secretKey), nil
+})
+if err != nil || !token.Valid {
+  // Token ist ungültig
+}
+```
+
+---
+
+## JWT-Token-Validierung per Shell-Tool
+
+Im Ordner `cmd/shell/` befindet sich ein CLI-Tool, mit dem du JWT-Tokens direkt auf Gültigkeit prüfen kannst. Das ist besonders nützlich für Debugging, Integrationstests oder zur schnellen Überprüfung von Tokens außerhalb des Servers.
+
+**Nutzung:**
+
+```bash
+go run cmd/shell/main.go -key <JWT-SECRET> -token <JWT-TOKEN>
+```
+
+**Beispiel:**
+
+```bash
+go run cmd/shell/main.go -key your-super-secret-jwt-key-change-in-production -token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+Das Tool gibt aus, ob der Token gültig ist oder nicht. Der Key muss mit dem in der API verwendeten Key übereinstimmen.
+
+**Wichtig:**
+- Der Key muss in allen Services identisch und sicher gespeichert sein.
+- Die Validierung erfolgt lokal, es ist keine zentrale /validate-Route nötig.
+- Die Claims sollten geprüft werden (Ablauf, Aussteller, etc.).
+
+---
+
 ## License
 
 MIT
