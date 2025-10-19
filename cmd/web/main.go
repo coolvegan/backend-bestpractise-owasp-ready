@@ -8,6 +8,7 @@ import (
 	"foodshop/internal/middleware"
 	"log"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -42,7 +43,10 @@ func main() {
 	log.Printf("Database initialized successfully")
 
 	// Initialize JWT secret (in production, load from environment variable)
-	jwtSecret := "your-super-secret-jwt-key-change-in-production"
+	jwtSecret := os.Getenv("JWTSECRET")
+	if jwtSecret == "" {
+		log.Fatal("Missing JWT Secret")
+	}
 	auth.SetJWTSecret(jwtSecret)
 	log.Printf("JWT authentication enabled")
 

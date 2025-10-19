@@ -1,0 +1,14 @@
+[Unit]
+Description=authserver
+After=network.target
+
+[Service]
+ExecStart=/home/youruser/backend-bestpractise-owasp-ready/main
+WorkingDirectory=/home/youruser/backend-bestpractise-owasp-ready
+Restart=always
+User=youruser
+Group=youruser
+Environment=JWTSECRET=secret
+
+[Install]
+WantedBy=multi-user.target
