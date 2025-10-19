@@ -35,11 +35,13 @@ type UserRegistration struct {
 
 // User represents a user in the database.
 type User struct {
-	ID          int64      `json:"id"`
-	Username    string     `json:"username"`
-	Password    string     `json:"-"` // Never expose password in JSON
-	Email       string     `json:"email,omitempty"`
-	IsActive    bool       `json:"is_active"`
-	CreatedAt   time.Time  `json:"created_at"`
-	DeactivedAt *time.Time `json:"deactived_at,omitempty"`
+	ID                  int64      `json:"id"`
+	Username            string     `json:"username"`
+	Password            string     `json:"-"` // Never expose password in JSON
+	Email               string     `json:"email,omitempty"`
+	IsActive            bool       `json:"is_active"`
+	CreatedAt           time.Time  `json:"created_at"`
+	DeactivedAt         *time.Time `json:"deactived_at,omitempty"`
+	FailedLoginAttempts int        `json:"-"` // Don't expose in API
+	LockedUntil         *time.Time `json:"-"` // Don't expose in API
 }

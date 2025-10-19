@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"foodshop/internal/database"
+	"foodshop/internal/handler"
 )
 
 // setupTestDB creates a temporary database for testing.
@@ -35,11 +36,8 @@ func setupTestDB(t *testing.T) *database.Sqlite {
 }
 
 func TestRegistrationHandler_Success(t *testing.T) {
-	// Setup
-	db = setupTestDB(t)
+	db := setupTestDB(t)
 	defer db.Close()
-
-	// Create request with strong password
 	payload := map[string]string{
 		"username":              "testuser",
 		"password":              "MyP@ssw0rd123",
@@ -50,9 +48,7 @@ func TestRegistrationHandler_Success(t *testing.T) {
 	req := httptest.NewRequest("POST", "/registration", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-
-	// Execute
-	RegistrationHandler(w, req)
+	handler.RegistrationHandler(db)(w, req)
 
 	// Assert
 	if w.Code != http.StatusCreated {
@@ -71,11 +67,8 @@ func TestRegistrationHandler_Success(t *testing.T) {
 }
 
 func TestRegistrationHandler_PasswordMismatch(t *testing.T) {
-	// Setup
-	db = setupTestDB(t)
+	db := setupTestDB(t)
 	defer db.Close()
-
-	// Create request with mismatched passwords
 	payload := map[string]string{
 		"username":              "testuser",
 		"password":              "MyP@ssw0rd123",
@@ -86,9 +79,7 @@ func TestRegistrationHandler_PasswordMismatch(t *testing.T) {
 	req := httptest.NewRequest("POST", "/registration", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-
-	// Execute
-	RegistrationHandler(w, req)
+	handler.RegistrationHandler(db)(w, req)
 
 	// Assert
 	if w.Code != http.StatusBadRequest {
@@ -106,11 +97,8 @@ func TestRegistrationHandler_PasswordMismatch(t *testing.T) {
 }
 
 func TestRegistrationHandler_MissingPasswordVerification(t *testing.T) {
-	// Setup
-	db = setupTestDB(t)
+	db := setupTestDB(t)
 	defer db.Close()
-
-	// Create request without password verification
 	payload := map[string]string{
 		"username": "testuser",
 		"password": "MyP@ssw0rd123",
@@ -120,9 +108,7 @@ func TestRegistrationHandler_MissingPasswordVerification(t *testing.T) {
 	req := httptest.NewRequest("POST", "/registration", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-
-	// Execute
-	RegistrationHandler(w, req)
+	handler.RegistrationHandler(db)(w, req)
 
 	// Assert
 	if w.Code != http.StatusBadRequest {
@@ -140,11 +126,8 @@ func TestRegistrationHandler_MissingPasswordVerification(t *testing.T) {
 }
 
 func TestRegistrationHandler_ShortPassword(t *testing.T) {
-	// Setup
-	db = setupTestDB(t)
+	db := setupTestDB(t)
 	defer db.Close()
-
-	// Create request with short password
 	payload := map[string]string{
 		"username":              "testuser",
 		"password":              "Short1!",
@@ -155,9 +138,7 @@ func TestRegistrationHandler_ShortPassword(t *testing.T) {
 	req := httptest.NewRequest("POST", "/registration", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-
-	// Execute
-	RegistrationHandler(w, req)
+	handler.RegistrationHandler(db)(w, req)
 
 	// Assert
 	if w.Code != http.StatusBadRequest {
@@ -175,11 +156,8 @@ func TestRegistrationHandler_ShortPassword(t *testing.T) {
 }
 
 func TestRegistrationHandler_DuplicateUsername(t *testing.T) {
-	// Setup
-	db = setupTestDB(t)
+	db := setupTestDB(t)
 	defer db.Close()
-
-	// Create first user
 	payload := map[string]string{
 		"username":              "testuser",
 		"password":              "MyP@ssw0rd123",
@@ -190,7 +168,7 @@ func TestRegistrationHandler_DuplicateUsername(t *testing.T) {
 	req1 := httptest.NewRequest("POST", "/registration", bytes.NewBuffer(body))
 	req1.Header.Set("Content-Type", "application/json")
 	w1 := httptest.NewRecorder()
-	RegistrationHandler(w1, req1)
+	handler.RegistrationHandler(db)(w1, req1)
 
 	if w1.Code != http.StatusCreated {
 		t.Fatalf("First registration failed: %s", w1.Body.String())
@@ -201,7 +179,7 @@ func TestRegistrationHandler_DuplicateUsername(t *testing.T) {
 	req2 := httptest.NewRequest("POST", "/registration", bytes.NewBuffer(body2))
 	req2.Header.Set("Content-Type", "application/json")
 	w2 := httptest.NewRecorder()
-	RegistrationHandler(w2, req2)
+	handler.RegistrationHandler(db)(w2, req2)
 
 	// Assert
 	if w2.Code != http.StatusConflict {
@@ -222,4 +200,64 @@ func TestMain(m *testing.M) {
 	// Run tests
 	code := m.Run()
 	os.Exit(code)
+}
+
+func TestLoginHandler_AccountLockout(t *testing.T) {
+	db := setupTestDB(t)
+	// Erstellt einen User
+	_, err := db.CreateUser("lockuser", "LockP@ssw0rd!", "lock@example.com")
+	if err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	loginHandler := handler.LoginHandler(db)
+
+	// 1. Erfolgreicher Login
+	login := map[string]string{"username": "lockuser", "password": "LockP@ssw0rd!"}
+	body, _ := json.Marshal(login)
+	req := httptest.NewRequest("POST", "/login", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	loginHandler(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200 OK, got %d", w.Code)
+	}
+
+	// 2. Mehrfache Fehlversuche
+	for i := 1; i <= database.MaxLoginAttempts; i++ {
+		badLogin := map[string]string{"username": "lockuser", "password": "Falsch123!"}
+		body, _ := json.Marshal(badLogin)
+		req := httptest.NewRequest("POST", "/login", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		loginHandler(w, req)
+		if i < database.MaxLoginAttempts && w.Code != http.StatusUnauthorized {
+			t.Errorf("Attempt %d: Expected 401 Unauthorized, got %d", i, w.Code)
+		}
+		if i == database.MaxLoginAttempts && w.Code != http.StatusLocked {
+			t.Errorf("Attempt %d: Expected 423 Locked, got %d", i, w.Code)
+		}
+	}
+
+	// 3. Gesperrtes Konto liefert 423
+	badLogin := map[string]string{"username": "lockuser", "password": "LockP@ssw0rd!"}
+	body, _ = json.Marshal(badLogin)
+	req = httptest.NewRequest("POST", "/login", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	loginHandler(w, req)
+	if w.Code != http.StatusLocked {
+		t.Errorf("Locked account: Expected 423 Locked, got %d", w.Code)
+	}
+
+	// 4. Nach Ablauf der Sperrzeit ist Login wieder möglich
+	db.UnlockAccount("lockuser") // Simuliere Ablauf der Sperrzeit
+	body, _ = json.Marshal(login)
+	req = httptest.NewRequest("POST", "/login", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	loginHandler(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("After unlock: Expected 200 OK, got %d", w.Code)
+	}
 }

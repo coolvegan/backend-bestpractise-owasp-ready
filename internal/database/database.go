@@ -63,7 +63,9 @@ func (s *Sqlite) InitSchema() error {
 		email TEXT,
 		is_active BOOLEAN NOT NULL DEFAULT 1,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		deactived_at DATETIME
+		deactived_at DATETIME,
+		failed_login_attempts INTEGER DEFAULT 0,
+		locked_until DATETIME
 	);
 	
 	CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -73,6 +75,17 @@ func (s *Sqlite) InitSchema() error {
 	_, err := s.db.Exec(schema)
 	if err != nil {
 		return fmt.Errorf("init schema: %w", err)
+	}
+
+	// Add columns to existing tables if they don't exist (migration)
+	migrations := []string{
+		`ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0`,
+		`ALTER TABLE users ADD COLUMN locked_until DATETIME`,
+	}
+
+	for _, migration := range migrations {
+		// Ignore errors if column already exists
+		s.db.Exec(migration)
 	}
 
 	return nil

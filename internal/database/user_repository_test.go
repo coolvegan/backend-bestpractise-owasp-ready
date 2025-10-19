@@ -3,6 +3,7 @@ package database
 import (
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestCreateUser verifies user creation with password hashing.
@@ -310,5 +311,200 @@ func TestVerifyPasswordDeactivatedUser(t *testing.T) {
 	_, err = db.VerifyPassword("testuser", "password123")
 	if err != ErrInvalidCredentials {
 		t.Errorf("Expected ErrInvalidCredentials for deactivated user, got %v", err)
+	}
+}
+
+// TestAccountLockout verifies account lockout after failed attempts.
+func TestAccountLockout(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_lockout.db")
+
+	repo, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	defer repo.Close()
+
+	db := repo.(*Sqlite)
+	if err := db.InitSchema(); err != nil {
+		t.Fatalf("InitSchema() failed: %v", err)
+	}
+
+	// Create a user
+	_, err = db.CreateUser("testuser", "password123", "test@example.com")
+	if err != nil {
+		t.Fatalf("CreateUser() failed: %v", err)
+	}
+
+	// Initially not locked
+	isLocked, _, err := db.IsAccountLocked("testuser")
+	if err != nil {
+		t.Fatalf("IsAccountLocked() failed: %v", err)
+	}
+	if isLocked {
+		t.Error("Account should not be locked initially")
+	}
+
+	// Increment failed attempts
+	for i := 1; i < MaxLoginAttempts; i++ {
+		if err := db.IncrementFailedAttempts("testuser"); err != nil {
+			t.Fatalf("IncrementFailedAttempts() failed: %v", err)
+		}
+
+		attempts, err := db.GetFailedAttempts("testuser")
+		if err != nil {
+			t.Fatalf("GetFailedAttempts() failed: %v", err)
+		}
+		if attempts != i {
+			t.Errorf("Expected %d failed attempts, got %d", i, attempts)
+		}
+	}
+
+	// Lock account manually
+	if err := db.LockAccount("testuser", LockoutDuration); err != nil {
+		t.Fatalf("LockAccount() failed: %v", err)
+	}
+
+	// Verify account is locked
+	isLocked, lockedUntil, err := db.IsAccountLocked("testuser")
+	if err != nil {
+		t.Fatalf("IsAccountLocked() after lock failed: %v", err)
+	}
+	if !isLocked {
+		t.Error("Account should be locked")
+	}
+	if time.Until(lockedUntil) > LockoutDuration {
+		t.Errorf("Lock duration too long: %v", lockedUntil)
+	}
+
+	// Reset failed attempts
+	if err := db.ResetFailedAttempts("testuser"); err != nil {
+		t.Fatalf("ResetFailedAttempts() failed: %v", err)
+	}
+
+	attempts, err := db.GetFailedAttempts("testuser")
+	if err != nil {
+		t.Fatalf("GetFailedAttempts() after reset failed: %v", err)
+	}
+	if attempts != 0 {
+		t.Errorf("Expected 0 failed attempts after reset, got %d", attempts)
+	}
+
+	// Unlock account
+	if err := db.UnlockAccount("testuser"); err != nil {
+		t.Fatalf("UnlockAccount() failed: %v", err)
+	}
+
+	// Verify account is unlocked
+	isLocked, _, err = db.IsAccountLocked("testuser")
+	if err != nil {
+		t.Fatalf("IsAccountLocked() after unlock failed: %v", err)
+	}
+	if isLocked {
+		t.Error("Account should be unlocked")
+	}
+}
+
+// TestAccountLockoutExpiration verifies that locks expire automatically.
+func TestAccountLockoutExpiration(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_lockout_expire.db")
+
+	repo, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	defer repo.Close()
+
+	db := repo.(*Sqlite)
+	if err := db.InitSchema(); err != nil {
+		t.Fatalf("InitSchema() failed: %v", err)
+	}
+
+	// Create a user
+	_, err = db.CreateUser("testuser", "password123", "test@example.com")
+	if err != nil {
+		t.Fatalf("CreateUser() failed: %v", err)
+	}
+
+	// Lock account for 1 second
+	if err := db.LockAccount("testuser", 1*time.Second); err != nil {
+		t.Fatalf("LockAccount() failed: %v", err)
+	}
+
+	// Verify account is locked
+	isLocked, _, err := db.IsAccountLocked("testuser")
+	if err != nil {
+		t.Fatalf("IsAccountLocked() failed: %v", err)
+	}
+	if !isLocked {
+		t.Error("Account should be locked")
+	}
+
+	// Wait for lock to expire
+	time.Sleep(2 * time.Second)
+
+	// Verify account is automatically unlocked
+	isLocked, _, err = db.IsAccountLocked("testuser")
+	if err != nil {
+		t.Fatalf("IsAccountLocked() after expiration failed: %v", err)
+	}
+	if isLocked {
+		t.Error("Account should be unlocked after expiration")
+	}
+}
+
+// TestAccountLockoutNonExistentUser verifies error handling for non-existent users.
+func TestAccountLockoutNonExistentUser(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test_lockout_nonexistent.db")
+
+	repo, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	defer repo.Close()
+
+	db := repo.(*Sqlite)
+	if err := db.InitSchema(); err != nil {
+		t.Fatalf("InitSchema() failed: %v", err)
+	}
+
+	// Try lockout operations on non-existent user
+	// IsAccountLocked should return ErrUserNotFound
+	_, _, err = db.IsAccountLocked("nonexistent")
+	if err != ErrUserNotFound {
+		t.Errorf("Expected ErrUserNotFound for IsAccountLocked, got %v", err)
+	}
+
+	// LockAccount should return ErrUserNotFound
+	err = db.LockAccount("nonexistent", LockoutDuration)
+	if err != ErrUserNotFound {
+		t.Errorf("Expected ErrUserNotFound for LockAccount, got %v", err)
+	}
+
+	// GetFailedAttempts should return ErrUserNotFound
+	_, err = db.GetFailedAttempts("nonexistent")
+	if err != ErrUserNotFound {
+		t.Errorf("Expected ErrUserNotFound for GetFailedAttempts, got %v", err)
+	}
+
+	// These operations are idempotent and succeed silently
+	// IncrementFailedAttempts - no-op if user doesn't exist
+	err = db.IncrementFailedAttempts("nonexistent")
+	if err != nil {
+		t.Errorf("IncrementFailedAttempts should succeed silently for non-existent user, got %v", err)
+	}
+
+	// ResetFailedAttempts - no-op if user doesn't exist
+	err = db.ResetFailedAttempts("nonexistent")
+	if err != nil {
+		t.Errorf("ResetFailedAttempts should succeed silently for non-existent user, got %v", err)
+	}
+
+	// UnlockAccount - no-op if user doesn't exist
+	err = db.UnlockAccount("nonexistent")
+	if err != nil {
+		t.Errorf("UnlockAccount should succeed silently for non-existent user, got %v", err)
 	}
 }
