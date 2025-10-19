@@ -13,6 +13,18 @@ type UserLogin struct {
 	Password string `json:"password"`
 }
 
+// LoginResponse represents a successful login response.
+type LoginResponse struct {
+	Message      string `json:"message"`
+	Token        string `json:"token"`
+	RefreshToken string `json:"refresh_token"`
+	User         struct {
+		ID       int64  `json:"id"`
+		Username string `json:"username"`
+		Email    string `json:"email"`
+	} `json:"user"`
+}
+
 // UserRegistration represents registration data.
 type UserRegistration struct {
 	Username             string `json:"username"`
