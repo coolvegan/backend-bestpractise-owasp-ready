@@ -1,8 +1,8 @@
 # Security Implementation - OWASP Compliance
 
-## ✅ Priority 1 Security Features Implemented
+## ✅ Priority 1 & 2 Security Features Implemented
 
-This document details all security features implemented to make the Foodshop API OWASP-compliant and production-ready.
+This document details all security features implemented to make the Foodshop API OWASP-compliant and production-ready. All HTTP handlers are now modular ausgelagert in `internal/handler/`.
 
 ---
 
@@ -202,6 +202,54 @@ dd if=/dev/zero bs=2M count=1 | \
 
 ---
 
+### 11. Account Lockout ✅
+
+**Protection Against:** Brute-force attacks on individual accounts
+
+**Implementation:**
+- After 5 failed login attempts, account is locked for 15 minutes
+- Lockout status is checked before password verification
+- Remaining attempts are communicated in error response
+- Lockout expires automatically
+- All logic covered by integration tests
+
+**Location:** `internal/database/user_repository.go`, `internal/handler/auth.go`, tested in `cmd/web/main_test.go`
+
+**Test:**
+```bash
+# Try 5x wrong password, then correct password
+for i in {1..5}; do
+  curl -X POST http://localhost:8080/login \
+    -H "Content-Type: application/json" \
+    -d '{"username":"testuser","password":"wrong"}'
+done
+# Should now be locked
+curl -X POST http://localhost:8080/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"testuser","password":"correct"}'
+```
+
+### 12. JWT Authentication & Token Blacklist ✅
+
+**Protection Against:** Session hijacking, replay attacks
+
+**Implementation:**
+- JWT tokens for stateless authentication
+- Refresh tokens
+- Token blacklist for logout (invalidates tokens)
+- All logic covered by integration tests
+
+**Location:** `internal/handler/auth.go`, `internal/auth/`
+
+**Test:**
+```bash
+# Login, get token, then logout
+TOKEN=$(curl -s -X POST http://localhost:8080/login -H "Content-Type: application/json" -d '{"username":"testuser","password":"MyP@ssw0rd123"}' | jq -r .token)
+curl -X POST http://localhost:8080/logout -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
 ## 📊 OWASP Top 10 Coverage
 
 | OWASP Risk | Status | Mitigation |
@@ -219,7 +267,11 @@ dd if=/dev/zero bs=2M count=1 | \
 
 ---
 
-## 🔧 Configuration
+## 🔧 Handler & Middleware Structure
+
+All HTTP handlers sind ausgelagert in `internal/handler/`. Die Middleware für Security, Logging, Rate Limiting etc. liegt in `internal/middleware/`.
+
+Alle Features sind durch Unit- und Integrationstests abgedeckt (`cmd/web/main_test.go`, `internal/database/user_repository_test.go`).
 
 ### Middleware Stack Order (Important!)
 

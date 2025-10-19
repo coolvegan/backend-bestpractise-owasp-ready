@@ -7,11 +7,14 @@ This application provides a user management system with SQLite database backend,
 ## Features
 
 - ✅ User Registration with password hashing (bcrypt)
-- ✅ User Authentication
+- ✅ User Authentication (JWT, Account Lockout)
+- ✅ Account Lockout after failed login attempts
+- ✅ Logout with token blacklist
 - ✅ Soft Delete (Deactivate Users)
 - ✅ Hard Delete (Permanent User Removal)
 - ✅ User Reactivation
 - ✅ Repository Pattern for database abstraction
+- ✅ All handlers modular in `internal/handler/`
 
 ## API Endpoints
 
@@ -75,7 +78,10 @@ This application provides a user management system with SQLite database backend,
 }
 ```
 
-**Note:** Login handler is currently a placeholder and needs implementation.
+**Security:**
+- Account lockout after 5 failed attempts (15 min)
+- JWT authentication
+- All OWASP Priority 1 features implemented
 
 ## Database Schema
 
@@ -164,6 +170,13 @@ go test -v ./internal/database/
 3. **Input Validation:** Server-side validation for all user inputs
 4. **Soft Deletes:** Users can be deactivated instead of permanently deleted
 5. **Active User Check:** Deactivated users cannot authenticate
+6. **Rate Limiting:** 10 req/sec, burst 20
+7. **Security Headers:** OWASP recommended headers
+8. **CORS:** Configurable, secure defaults
+9. **Request Size/Timeout:** 1MB, 30s
+10. **Account Lockout:** 5 failed logins = 15 min lock
+11. **JWT Auth:** Stateless, secure
+12. **Token Blacklist:** Secure logout
 
 ## Testing the Registration Endpoint
 
@@ -207,15 +220,20 @@ http POST :8080/registration \
 foodshop/
 ├── cmd/
 │   └── web/
-│       └── main.go              # HTTP handlers and server setup
+│       └── main.go              # Server setup, only routing
 ├── internal/
 │   ├── database/
 │   │   ├── database.go          # Core repository interface and Sqlite implementation
 │   │   ├── database_test.go     # Database connection tests
 │   │   ├── user_repository.go   # User-specific repository methods
 │   │   └── user_repository_test.go  # User repository tests
-│   └── models/
-│       └── user.go              # User data models
+│   ├── handler/
+│   │   ├── user.go              # Profile & Index handlers
+│   │   └── auth.go              # Login, Registration, Logout handlers
+│   ├── models/
+│   │   └── user.go              # User data models
+│   ├── middleware/              # Security, rate limit, logging, etc.
+│   └── validator/               # Input validation
 ├── data/
 │   └── foodshop.db              # SQLite database (created automatically)
 ├── go.mod
@@ -223,54 +241,14 @@ foodshop/
 └── README.md
 ```
 
-## Next Steps
+## Status
 
-To complete the implementation:
-
-1. **Login Handler:** Implement authentication logic using `VerifyPassword()`
-2. **Session Management:** Add JWT tokens or session cookies
-3. **Logout Handler:** Implement session invalidation
-4. **Middleware:** Add authentication middleware for protected routes
-5. **Email Verification:** Optional email confirmation on registration
-6. **Rate Limiting:** Protect against brute force attacks
-7. **Migrations:** Add proper database migration system
-8. **Logging:** Structured logging for production
+All core features und OWASP Priority 1 sind vollständig implementiert und getestet.
+Account Lockout, JWT, Token Blacklist und alle Security-Middleware sind produktionsreif.
 
 ## Example Code
 
-### Initialize Database in Your Code
-
-```go
-package main
-
-import (
-    "foodshop/internal/database"
-    "log"
-)
-
-func main() {
-    // Open database
-    repo, err := database.New("./data/app.db")
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer repo.Close()
-
-    // Cast to Sqlite for schema init
-    db := repo.(*database.Sqlite)
-    if err := db.InitSchema(); err != nil {
-        log.Fatal(err)
-    }
-
-    // Use repository methods
-    user, err := db.CreateUser("john", "password123", "john@example.com")
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    log.Printf("Created user: %s (ID: %d)", user.Username, user.ID)
-}
-```
+Siehe die Handler in `internal/handler/` für alle Endpunkte und die Middleware in `internal/middleware/` für Security-Features.
 
 ## License
 
